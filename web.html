@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kamailio WebSocket - Návod na zprovoznění</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 10px;
+        }
+        
+        h2 {
+            color: #0066cc;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+        
+        h3 {
+            color: #555;
+            margin-top: 25px;
+        }
+        
+        .step-number {
+            background: #0066cc;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .code {
+            background: #f4f4f4;
+            border-left: 4px solid #0066cc;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        .explanation {
+            background: #f9f9f9;
+            border-left: 4px solid #999;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+        }
+        
+        li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Kamailio WebSocket</h1>
+        
+        <h2>Instalace Kamailio a potřebných modulů</h2>
+        
+        <ul>
+            <li><strong>kamailio</strong>
+            <li><strong>kamailio-websocket-modules</strong>
+            <li><strong>kamailio-tls-modules</strong>
+            <li><strong>kamailio-extra-modules</strong>
+        </ul>
+        <div class="code">sudo apt-get update
+sudo apt-get install kamailio kamailio-websocket-modules kamailio-tls-modules kamailio-extra-modules</div>
+
+        <h2> Zjištění IP adresy serveru</h2>
+
+        <div class="code">ip addr show</div>
+
+        <h2> Vytvoření SSL certifikátů</h2>
+        
+        <div class="code">sudo mkdir -p /etc/kamailio/ssl
+cd /etc/kamailio/ssl</div>
+
+        <h3>Generování private key:</h3>
+        <div class="code">sudo openssl genrsa -out kamailio-key.pem 2048</div>
+
+        <h3>Generování certifikátu:</h3>
+        <div class="code">sudo openssl req -new -x509 -key kamailio-key.pem -out kamailio-cert.pem -days 365 -subj "/CN=172.28.215.122"</div>
+
+        <h3>Nastavení oprávnění k souborům:</h3>
+        <div class="code">sudo chmod 600 kamailio-key.pem
+sudo chmod 644 kamailio-cert.pem</div>
+
+        <h2>Vytvoření TLS konfigurační souboru</h2>
+
+        <h3>Vytvoření souboru:</h3>
+        <div class="code">sudo nano /etc/kamailio/tls.cfg</div>
+
+        <h3>Obsah souboru tls.cfg:</h3>
+        <div class="code">[server:default]
+method = TLSv1.2+
+verify_certificate = no
+require_certificate = no
+private_key = /etc/kamailio/ssl/kamailio-key.pem
+certificate = /etc/kamailio/ssl/kamailio-cert.pem
+
+[client:default]
+verify_certificate = no
+require_certificate = no</div>
+
+        <h2>Konfigurace hlavního souboru kamailio.cfg</h2>
+
+        <h3>Otevření souboru:</h3>
+        <div class="code">sudo nano /etc/kamailio/kamailio.cfg</div>
+
+        <h3>Struktura konfiguračního souboru:</h3>
+        
+        <h4>1. Globální parametry (začátek souboru):</h4>
+        <div class="code">debug=3
+log_stderror=no
+memdbg=5
+memlog=5
+log_facility=LOG_LOCAL0
+fork=yes
+children=8</div>
+
+        <h4>2. Nastavení portů (listen direktivy):</h4>
+        <div class="code">listen=udp:172.28.215.122:5060
+listen=tcp:172.28.215.122:5060
+listen=tls:172.28.215.122:5061
+listen=tcp:172.28.215.122:8080
+listen=tls:172.28.215.122:8443</div>
+
+        <h4>3. Načítání modulů (loadmodule):</h4>
+        <p>Moduly přidávají funkčnost do Kamailio. Každý modul se musí načíst před použitím:</p>
+
+        <div class="code">loadmodule "tm.so"         # Transaction Manager - řídí SIP transakce
+loadmodule "sl.so"         # Stateless replies - rychlé odpovědi
+loadmodule "rr.so"         # Record-Route - směrování dialogů
+loadmodule "websocket.so"  # WebSocket podpora
+loadmodule "tls.so"        # TLS/SSL šifrování
+loadmodule "usrloc.so"     # User Location - databáze uživatelů
+loadmodule "registrar.so"  # SIP registrace</div>
+
+        <h4>4. Parametry modulů (modparam):</h4>
+        <p>Každý modul lze konfigurovat pomocí parametrů:</p>
+
+        <div class="code">modparam("websocket", "keepalive_mechanism", 1)
+modparam("websocket", "keepalive_timeout", 30)
+modparam("websocket", "keepalive_interval", 10)</div>
+
+        <h4>5. Routing logika (request_route):</h4>
+        <p>Toto je "srdce" Kamailio - zde se rozhoduje, jak se zpracují příchozí SIP zprávy:</p>
+
+        <div class="code">request_route {
+    route(REQINIT);      # Úvodní kontroly
+    route(WITHINDLG);    # Zpracování dialogů
+    route(REGISTRAR);    # Registrace uživatelů
+    route(LOCATION);     # Vyhledání uživatele
+}</div>
+
+        <h4>6. Event routes pro WebSocket:</h4>
+        <div class="code">event_route[xhttp:request] {
+    # Zpracování HTTP/WebSocket požadavků
+    if ($hdr(Upgrade) =~ "websocket") {
+        ws_handle_handshake();
+    }
+}</div>
+
+        <h2>Kontrola konfigurace</h2>
+
+        <h3>Příkaz pro kontrolu:</h3>
+        <div class="code">sudo kamailio -c -f /etc/kamailio/kamailio.cfg</div>
+
+        <div class="success">
+            <strong>Očekávaný výstup při úspěchu:</strong>
+            <div class="code">Listening on
+             udp: 172.28.215.122:5060
+             tcp: 172.28.215.122:5060
+             tcp: 172.28.215.122:8080
+Aliases:
+             *: 172.28.215.122:*
+config file ok, exiting...</div>
+            <p>Poslední řádek "config file ok, exiting..." znamená, že konfigurace je v pořádku.</p>
+        </div>
+
+        <h2>Spuštění Kamailio</h2>
+
+        <h3>Restart služby:</h3>
+        <div class="code">sudo systemctl restart kamailio</div>
+
+        <h3>Kontrola stavu:</h3>
+        <div class="code">sudo systemctl status kamailio</div>
+
+        <div class="success">
+            <strong>Pokud vše bude fungovat:</strong>
+            <div class="code">Active: active (running)</div>
+        </div>
+
+        <h3>Kontrola portů:</h3>
+        <div class="code">sudo netstat -tulpn | grep kamailio</div>
+
+        <div class="info">
+            <strong>Mělo by se zobrazit:</strong>
+            <div class="code">tcp   0  0  172.28.215.122:5060   0.0.0.0:*   LISTEN  PID/kamailio
+udp   0  0  172.28.215.122:5060   0.0.0.0:*           PID/kamailio
+tcp   0  0  172.28.215.122:5061   0.0.0.0:*   LISTEN  PID/kamailio
+tcp   0  0  172.28.215.122:8080   0.0.0.0:*   LISTEN  PID/kamailio
+tcp   0  0  172.28.215.122:8443   0.0.0.0:*   LISTEN  PID/kamailio</div>
+        </div>
+
+        <h2><span class="step-number">Krok 8</span> Otevření firewall portů</h2>
+        
+        <h3>Proč je to potřeba:</h3>
+        <p>Firewall blokuje příchozí spojení z bezpečnostních důvodů. Musíš explicitně povolit porty, které Kamailio používá, jinak se k němu nebude možné připojit z internetu nebo z jiných počítačů v síti.</p>
+
+        <h3>Kontrola, zda je firewall aktivní:</h3>
+        <div class="code">sudo ufw status</div>
+
+        <div class="explanation">
+            <strong>Vysvětlení:</strong> Pokud vidíš "Status: active", firewall běží a musíš otevřít porty. Pokud vidíš "Status: inactive", firewall je vypnutý a tento krok můžeš přeskočit.
+        </div>
+
+        <h3>Otevření portů:</h3>
+        <div class="code">sudo ufw allow 5060/udp
+sudo ufw allow 5060/tcp
+sudo ufw allow 5061/tcp
+sudo ufw allow 8080/tcp
+sudo ufw allow 8443/tcp</div>
+
+        <div class="explanation">
+            <strong>Vysvětlení každého portu:</strong>
+            <ul>
+                <li><code>5060/udp</code> - SIP přes UDP (standardní)</li>
+                <li><code>5060/tcp</code> - SIP přes TCP</li>
+                <li><code>5061/tcp</code> - SIP přes TLS (šifrovaný)</li>
+                <li><code>8080/tcp</code> - WebSocket</li>
+                <li><code>8443/tcp</code> - Secure WebSocket (WSS)</li>
+            </ul>
+        </div>
+
+        <h3>Ověření změn:</h3>
+        <div class="code">sudo ufw status numbered</div>
+
+        <div class="explanation">
+            <strong>Vysvětlení:</strong> Tento příkaz zobrazí všechna firewall pravidla s čísly. Měl bys vidět nově přidané porty v seznamu povolených.
+        </div>
+
+        <h2><span class="step-number">Krok 9</span> Sledování logů</h2>
+        
+        <h3>Proč sledovat logy:</h3>
+        <p>Logy jsou zásadní pro zjištění, co se děje uvnitř Kamailio. Uvidíš v nich příchozí požadavky, chyby, WebSocket handshake, SIP zprávy a všechny důležité události.</p>
+
+        <h3>Příkaz pro sledování logů v reálném čase:</h3>
+        <div class="code">sudo journalctl -u kamailio -f</div>
+
+        <div class="explanation">
+            <strong>Vysvětlení parametrů:</strong>
+            <ul>
+                <li><code>journalctl</code> - nástroj pro prohlížení systemd logů</li>
+                <li><code>-u kamailio</code> - zobraz pouze logy od služby "kamailio"</li>
+                <li><code>-f</code> - follow mode (sleduj nové záznamy v reálném čase, jako "tail -f")</li>
+            </ul>
+            <p>Pro ukončení sledování stiskni Ctrl+C</p>
+        </div>
+
+        <h3>Zobrazení posledních 50 záznamů:</h3>
+        <div class="code">sudo journalctl -u kamailio -n 50</div>
+
+        <div class="explanation">
+            <strong>Vysvětlení:</strong> Parametr <code>-n 50</code> zobrazí posledních 50 řádků logů. Užitečné, když se chceš podívat, co se stalo před chvílí.
+        </div>
+
+        <h3>Vyhledávání chyb v logu:</h3>
+        <div class="code">sudo journalctl -u kamailio | grep -i error</div>
+
+        <div class="explanation">
+            <strong>Vysvětlení:</strong> 
+            <ul>
+                <li><code>|</code> - pipe (přesměruje výstup)</li>
+                <li><code>grep -i error</code> - vyhledá všechny řádky obsahující slovo "error" (nezávisle na velikosti písmen)</li>
+            </ul>
+        </div>
+
+        <h2><span class="step-
